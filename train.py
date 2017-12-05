@@ -27,10 +27,10 @@ from tqdm import tqdm
 def run(model_name, lr, optimizer, epoch, patience, batch_size):
     # Loading Datasets
     (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
-
+    width = 28
     # Compute the bottleneck feature
 
-    def get_features(MODEL, data=X):
+    def get_features(MODEL, data=x_train):
         cnn_model = MODEL(
             include_top=False,
             input_shape=(width, width, 3),
@@ -171,7 +171,7 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
     }
     print(list_model[model_name])
     fine_tune(list_model[model_name], model_name, optimizer, lr, epoch,
-              patience, batch_size, X)
+              patience, batch_size, x_train)
     # fine_tune(list_model[0], list_name_model[0], optimizer, lr, epoch,
     #           patience, batch_size, X)
 
