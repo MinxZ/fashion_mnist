@@ -22,34 +22,39 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import *
 from keras.utils.vis_utils import model_to_dot
 from tqdm import tqdm
+from scipy import misc
 
 
-def run(model_name, lr, optimizer, epoch, patience, batch_size):
+def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
     def load_data():
         num_classes = 10
-        img_rows, img_cols = 28, 28
+        height, width = 128, 128
 
-        if K.image_data_format() == 'channels_first':
-            input_shape = (1, img_rows, img_cols)
-        else:
-            input_shape = (img_rows, img_cols, 1)
-
-        # train is data, train_l is label for train data
         (train, train_l), (test, test_l) = fashion_mnist.load_data()
-        X = train.reshape((train.shape[0], ) + input_shape)
-        x_test = test.reshape((test.shape[0], ) + input_shape)
-        X = X.astype('float32')
-        x_test = x_test.astype('float32')
 
         # convert class vectors to binary class matrices
         y = keras.utils.to_categorical(train_l, num_classes)
         y_test = keras.utils.to_categorical(test_l, num_classes)
 
+        # use this in future
+        # X_train = np.array([resize(x, (height,width)).astype(float) for x in tqdm(iter(X_train.astype(int)))])/255.
+
+        train = train.reshape((-1, 28, 28))
+        train = np.array(
+            [misc.imresize(x, (height, width)) for x in tqdm(iter(train))])
+        test = test.reshape((-1, 28, 28))
+        test = np.array(
+            [misc.imresize(x, (height, width)) for x in tqdm(iter(test))])
+
+        x = np.stack((train, train, train), axis=3)
+        x_test = np.stack((test, test, test), axis=3)
+
+        print(x.shape)
         # devide into train and validation
-        dvi = int(X.shape[0] * 0.9)
-        x_train = X[:dvi, :, :, :]
+        dvi = int(train.shape[0] * 0.9)
+        x_train = x[:dvi, :, :, :]
         y_train = y[:dvi, :]
-        x_val = X[dvi:, :, :, :]
+        x_val = x[dvi:, :, :, :]
         y_val = y[dvi:, :]
 
         print('x_train shape:', x_train.shape)
@@ -62,10 +67,13 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
     # Loading Datasets
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data()
 
-    # Compute the bottleneck feature
+    n_class = y_test.shape[1]
     input_shape = x_train.shape[1:]
-    n_class = 10
-    weights = None
+    if weights == 'None':
+        weights = None
+    else:
+        weights = 'imagenet'
+    print('weights are ' + str(weights))
 
     def get_features(MODEL, data=x_train):
         cnn_model = MODEL(
@@ -88,6 +96,7 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
                   epoch,
                   patience,
                   batch_size,
+                  weights,
                   X=x_train):
         # Fine-tune the model
         print("\n\n Fine tune " + model_name + " : \n")
@@ -125,15 +134,14 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
                         epochs=5,
                         validation_split=0.1)
 
-                    model_fc.save('fc_' + model_name + '.h5', 'w')
+                    model_fc.save('fc_' + model_name + '.h5')
 
         datagen = ImageDataGenerator(
             preprocessing_function=preprocess_input,
-            zoom_range=0.2,
-            horizontal_flip=True,
-            width_shift_range=0.2,
-            height_shift_range=0.2)
-
+            horizontal_flip=True)
+            # ,
+            # width_shift_range=0.2,
+            # height_shift_range=0.2
         val_datagen = ImageDataGenerator(
             preprocessing_function=preprocess_input)
 
@@ -147,7 +155,7 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
         x = Dense(n_class, activation='softmax', name='predictions')(x)
         model = Model(inputs=inputs, outputs=x)
 
-        # for layer in model.layers[:114]:
+        # for layer in model.layers[:20]:
         #     layer.trainable = False
 
         print("\n " + "Optimizer=" + optimizer + " lr=" + str(lr) + " \n")
@@ -190,7 +198,7 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
                 x_val, y_val, batch_size=batch_size),
             validation_steps=len(x_val) / batch_size,
             epochs=epoch,
-            callbacks=[early_stopping, checkpointer, history])
+            callbacks=[checkpointer, history])
 
         with open(model_name + ".csv", 'a') as f_handle:
             np.savetxt(f_handle, history.losses)
@@ -202,9 +210,8 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size):
         "VGG16": VGG16,
         "MobileNet": MobileNet
     }
-    print(list_model[model_name])
     fine_tune(list_model[model_name], model_name, optimizer, lr, epoch,
-              patience, batch_size, x_train)
+              patience, batch_size, weights, x_train)
 
 
 def parse_args():
@@ -213,16 +220,20 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Hyper parameter")
     parser.add_argument(
         "--model", help="Model to use", default="Xception", type=str)
-    parser.add_argument(
-        "--lr", help="learning rate", default=0.0001, type=float)
+    parser.add_argument("--lr", help="learning rate", default=0.01, type=float)
     parser.add_argument(
         "--optimizer", help="optimizer", default="Adam", type=str)
     parser.add_argument(
-        "--epoch", help="Number of epochs", default=10000, type=int)
+        "--epoch", help="Number of epochs", default=1e9, type=int)
     parser.add_argument(
-        "--patience", help="Patience to wait", default=10, type=int)
+        "--patience", help="Patience to wait", default=5, type=int)
     parser.add_argument(
         "--batch_size", help="Batch size", default=64, type=int)
+    parser.add_argument(
+        "--weights",
+        help="to use pretrained weights or not",
+        default='None',
+        type=str)
 
     return parser.parse_args()
 
@@ -230,5 +241,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     run(args.model, args.lr, args.optimizer, args.epoch, args.patience,
-        args.batch_size)
+        args.batch_size, args.weights)
 
