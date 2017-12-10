@@ -12,7 +12,7 @@ import pandas as pd
 from keras import backend as K
 from keras.applications import *
 from keras.applications.inception_v3 import preprocess_input
-from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
+from keras.callbacks import *
 from keras.datasets import fashion_mnist
 from keras.layers import *
 from keras.models import *
@@ -21,8 +21,8 @@ from keras.preprocessing import image
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import *
 from keras.utils.vis_utils import model_to_dot
-from tqdm import tqdm
 from scipy import misc
+from tqdm import tqdm
 
 
 def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
@@ -46,15 +46,16 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
         test = np.array(
             [misc.imresize(x, (height, width)) for x in tqdm(iter(test))])
 
-        x = np.stack((train, train, train), axis=3)
-        x_test = np.stack((test, test, test), axis=3)
+        train = np.stack((train, train, train), axis=3) / 255.
+        x_test = np.stack((test, test, test), axis=3) / 255.
 
         print(x.shape)
+
         # devide into train and validation
         dvi = int(train.shape[0] * 0.9)
-        x_train = x[:dvi, :, :, :]
+        x_train = train[:dvi, :, :, :]
         y_train = y[:dvi, :]
-        x_val = x[dvi:, :, :, :]
+        x_val = train[dvi:, :, :, :]
         y_val = y[dvi:, :]
 
         print('x_train shape:', x_train.shape)
@@ -99,8 +100,34 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
                   weights,
                   X=x_train):
         # Fine-tune the model
-        print("\n\n Fine tune " + model_name + " : \n")
+        print("\n Fine tune " + model_name + " : \n")
 
+        from random_eraser import get_random_eraser  # added
+        datagen = ImageDataGenerator(
+            featurewise_center=True,
+            featurewise_std_normalization=True,
+            horizontal_flip=True,
+            preprocessing_function=get_random_eraser(v_h=60, pixel_level=False))
+        # ,
+        # width_shift_range=0.2,
+        # height_shift_range=0.2
+        val_datagen = ImageDataGenerator(
+            featurewise_center=True, featurewise_std_normalization=True)
+
+        inputs = Input(input_shape)
+        x = inputs
+        cnn_model = MODEL(
+            include_top=False, input_shape=input_shape, weights=None)
+        x = cnn_model(x)
+        x = GlobalAveragePooling2D()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(n_class, activation='softmax', name='predictions')(x)
+        model = Model(inputs=inputs, outputs=x)
+
+        # for layer in model.layers[:20]:
+        #     layer.trainable = False
+
+        # Loading weights
         if weights != None:
             try:
                 model.load_weights(model_name + '.h5')
@@ -133,39 +160,13 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
                         batch_size=128,
                         epochs=5,
                         validation_split=0.1)
-
                     model_fc.save('fc_' + model_name + '.h5')
-
-        datagen = ImageDataGenerator(
-            preprocessing_function=preprocess_input,
-            horizontal_flip=True)
-            # ,
-            # width_shift_range=0.2,
-            # height_shift_range=0.2
-        val_datagen = ImageDataGenerator(
-            preprocessing_function=preprocess_input)
-
-        inputs = Input(input_shape)
-        x = inputs
-        cnn_model = MODEL(
-            include_top=False, input_shape=input_shape, weights=None)
-        x = cnn_model(x)
-        x = GlobalAveragePooling2D()(x)
-        x = Dropout(0.5)(x)
-        x = Dense(n_class, activation='softmax', name='predictions')(x)
-        model = Model(inputs=inputs, outputs=x)
-
-        # for layer in model.layers[:20]:
-        #     layer.trainable = False
+                    model.load_weights(
+                        'fc_' + model_name + '.h5', by_name=True)
 
         print("\n " + "Optimizer=" + optimizer + " lr=" + str(lr) + " \n")
 
-        if optimizer == "Nadam":
-            model.compile(
-                optimizer=Nadam(lr=lr),
-                loss='categorical_crossentropy',
-                metrics=['accuracy'])
-        elif optimizer == "Adam":
+        if optimizer == "Adam":
             model.compile(
                 loss='categorical_crossentropy',
                 optimizer=Adam(lr=lr),
@@ -186,11 +187,12 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
                 self.losses.append((logs.get('loss'), logs.get("val_loss")))
 
         history = LossHistory()
-
         early_stopping = EarlyStopping(
             monitor='val_loss', patience=patience, verbose=1, mode='auto')
         checkpointer = ModelCheckpoint(
             filepath=model_name + '.h5', verbose=0, save_best_only=True)
+        reduce_lr = ReduceLROnPlateau(factor=0.3, patience=3)
+
         h2 = model.fit_generator(
             datagen.flow(x_train, y_train, batch_size=batch_size),
             steps_per_epoch=len(x_train) / batch_size,
@@ -198,7 +200,7 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
                 x_val, y_val, batch_size=batch_size),
             validation_steps=len(x_val) / batch_size,
             epochs=epoch,
-            callbacks=[checkpointer, history])
+            callbacks=[history, early_stopping, checkpointer, reduce_lr])
 
         with open(model_name + ".csv", 'a') as f_handle:
             np.savetxt(f_handle, history.losses)
@@ -222,17 +224,20 @@ def parse_args():
         "--model", help="Model to use", default="Xception", type=str)
     parser.add_argument("--lr", help="learning rate", default=0.01, type=float)
     parser.add_argument(
-        "--optimizer", help="optimizer", default="Adam", type=str)
+        "--optimizer", help="Optimizer to use", default="Adam", type=str)
     parser.add_argument(
-        "--epoch", help="Number of epochs", default=1e9, type=int)
-    parser.add_argument(
-        "--patience", help="Patience to wait", default=5, type=int)
+        "--epoch", help="Number of epochs", default=1e5, type=int)
     parser.add_argument(
         "--batch_size", help="Batch size", default=64, type=int)
     parser.add_argument(
+        "--patience",
+        help="Patience to wait to early stopping",
+        default=7,
+        type=int)
+    parser.add_argument(
         "--weights",
         help="to use pretrained weights or not",
-        default='None',
+        default='imagenet',
         type=str)
 
     return parser.parse_args()
