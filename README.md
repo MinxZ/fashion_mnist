@@ -13,4 +13,4 @@ MobileNet.h5 and MobileNet_sim.h5 is the saved model and weights.
 I use random_eraser.py from [cutout-random-erasing](https://github.com/yu4u/cutout-random-erasing.).
 Thanks yu4u.
 
-I also reference on [Image similarity using Deep CNN and Curriculum Learning] (https://arxiv.org/pdf/1709.08761.pdf.). 
+I also reference on [Image similarity using Deep CNN and Curriculum Learning](https://arxiv.org/pdf/1709.08761.pdf.).
