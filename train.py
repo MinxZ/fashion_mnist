@@ -25,37 +25,34 @@ from scipy import misc
 from tqdm import tqdm
 
 
-def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
-    def load_data():
+def run(model_name, lr, optimizer, epoch, patience, batch_size, weights, test=None):
+    def load_data(height=128, width=128, use_imagenet=None):
         num_classes = 10
-        height, width = 128, 128
-
         (train, train_l), (test, test_l) = fashion_mnist.load_data()
 
-        # convert class vectors to binary class matrices
         y = keras.utils.to_categorical(train_l, num_classes)
         y_test = keras.utils.to_categorical(test_l, num_classes)
 
-        # use this in future
-        # X_train = np.array([resize(x, (height,width)).astype(float) for x in tqdm(iter(X_train.astype(int)))])/255.
+        if use_imagenet:
+            train = (train.reshape((-1, 28, 28)) / 255. - 0.5) * 2
+            train = np.array(
+                [misc.imresize(x, (height, width)) for x in tqdm(iter(train))])
+            test = (test.reshape((-1, 28, 28)) / 255. - 0.5) * 2
+            test = np.array(
+                [misc.imresize(x, (height, width)) for x in tqdm(iter(test))])
 
-        train = train.reshape((-1, 28, 28))
-        train = np.array(
-            [misc.imresize(x, (height, width)) for x in tqdm(iter(train))])
-        test = test.reshape((-1, 28, 28))
-        test = np.array(
-            [misc.imresize(x, (height, width)) for x in tqdm(iter(test))])
-
-        train = np.stack((train, train, train), axis=3) / 255.
-        x_test = np.stack((test, test, test), axis=3) / 255.
-
-        print(x.shape)
+            x = np.stack((train, train, train), axis=3)
+            x_test = np.stack((test, test, test), axis=3)
+        else:
+            x = (train.reshape((train.shape[0], 28, 28, 1)) / 255. - 0.5) * 2
+            x_test = (test.reshape(
+                (test.shape[0], 28, 28, 1)) / 255. - 0.5) * 2
 
         # devide into train and validation
         dvi = int(train.shape[0] * 0.9)
-        x_train = train[:dvi, :, :, :]
+        x_train = x[:dvi, :, :, :]
         y_train = y[:dvi, :]
-        x_val = train[dvi:, :, :, :]
+        x_val = x[dvi:, :, :, :]
         y_val = y[dvi:, :]
 
         print('x_train shape:', x_train.shape)
@@ -70,11 +67,15 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
 
     n_class = y_test.shape[1]
     input_shape = x_train.shape[1:]
+
     if weights == 'None':
         weights = None
+        print("\n Training on " + model_name + ": \n")
     else:
         weights = 'imagenet'
-    print('weights are ' + str(weights))
+        print("\n Fine tune on " + model_name + ": \n")
+
+    print('Weights are ' + str(weights))
 
     def get_features(MODEL, data=x_train):
         cnn_model = MODEL(
@@ -98,21 +99,16 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
                   patience,
                   batch_size,
                   weights,
-                  X=x_train):
+                  X=x_train,
+                  test=None):
         # Fine-tune the model
-        print("\n Fine tune " + model_name + " : \n")
 
-        from random_eraser import get_random_eraser  # added
+        from random_eraser import get_random_eraser
         datagen = ImageDataGenerator(
-            featurewise_center=True,
-            featurewise_std_normalization=True,
             horizontal_flip=True,
-            preprocessing_function=get_random_eraser(v_h=60, pixel_level=False))
-        # ,
-        # width_shift_range=0.2,
-        # height_shift_range=0.2
-        val_datagen = ImageDataGenerator(
-            featurewise_center=True, featurewise_std_normalization=True)
+            preprocessing_function=get_random_eraser(v_h=60, pixel_level=True))
+
+        val_datagen = ImageDataGenerator()
 
         inputs = Input(input_shape)
         x = inputs
@@ -121,55 +117,47 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
         x = cnn_model(x)
         x = GlobalAveragePooling2D()(x)
         x = Dropout(0.5)(x)
+        x = Dense(128, activation='relu', name='sim')(x)
+        x = Dropout(0.5)(x)
         x = Dense(n_class, activation='softmax', name='predictions')(x)
         model = Model(inputs=inputs, outputs=x)
 
-        # for layer in model.layers[:20]:
-        #     layer.trainable = False
-
         # Loading weights
-        if weights != None:
-            try:
-                model.load_weights(model_name + '.h5')
-                print('Load ' + model_name + '.h5 successfully.')
-            except:
-                try:
-                    model.load_weights(
-                        'fc_' + model_name + '.h5', by_name=True)
-                    print('Fail to load ' + model_name + '.h5, load fc_' +
-                          model_name + '.h5 instead.')
-                except:
-                    print('Start computing ' + model_name +
-                          ' bottleneck feature: ')
-                    features = get_features(MODEL, X)
+        try:
+            model.load_weights(model_name + '.h5')
+            print('Load ' + model_name + '.h5 successfully.')
+        except:
+            if weights == 'imagenet':
+                print(
+                    'Start computing ' + model_name + ' bottleneck feature: ')
+                features = get_features(MODEL, X)
 
-                    # Training models
-                    inputs = Input(features.shape[1:])
-                    x = inputs
-                    x = Dropout(0.5)(x)
-                    x = Dense(
-                        n_class, activation='softmax', name='predictions')(x)
-                    model_fc = Model(inputs, x)
-                    model_fc.compile(
-                        optimizer='adam',
-                        loss='categorical_crossentropy',
-                        metrics=['accuracy'])
-                    h = model_fc.fit(
-                        features,
-                        y_train,
-                        batch_size=128,
-                        epochs=5,
-                        validation_split=0.1)
-                    model_fc.save('fc_' + model_name + '.h5')
-                    model.load_weights(
-                        'fc_' + model_name + '.h5', by_name=True)
+                # Training models
+                inputs = Input(features.shape[1:])
+                x = inputs
+                x = Dropout(0.5)(x)
+                x = Dense(128, activation='relu', name='sim')(x)
+                x = Dropout(0.5)(x)
+                x = Dense(n_class, activation='softmax', name='predictions')(x)
+                model_fc = Model(inputs, x)
+                model_fc.compile(
+                    optimizer='adam',
+                    loss='categorical_crossentropy',
+                    metrics=['accuracy'])
+                h = model_fc.fit(
+                    features,
+                    y_train,
+                    batch_size=128,
+                    epochs=5,
+                    validation_split=0.1)
+                model_fc.save('fc_' + model_name + '.h5')
+                model.load_weights('fc_' + model_name + '.h5', by_name=True)
 
-        print("\n " + "Optimizer=" + optimizer + " lr=" + str(lr) + " \n")
-
+        print("Optimizer=" + optimizer + " lr=" + str(lr) + " \n")
         if optimizer == "Adam":
             model.compile(
                 loss='categorical_crossentropy',
-                optimizer=Adam(lr=lr),
+                optimizer='adam',
                 metrics=['accuracy'])
         elif optimizer == "SGD":
             model.compile(
@@ -177,33 +165,45 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
                 optimizer=SGD(lr=lr, momentum=0.9, nesterov=True),
                 metrics=['accuracy'])
 
-        class LossHistory(keras.callbacks.Callback):
-            def on_train_begin(self, logs={}):
-                # self.val_losses = []
-                self.losses = []
+        if not test:
+            datagen.fit(x_train)
+            val_datagen.fit(x_val)
 
-            def on_epoch_end(self, batch, logs={}):
-                # self.val_losses.append(logs.get("val_loss"))
-                self.losses.append((logs.get('loss'), logs.get("val_loss")))
+            class LossHistory(keras.callbacks.Callback):
+                def on_train_begin(self, logs={}):
+                    self.losses = []
 
-        history = LossHistory()
-        early_stopping = EarlyStopping(
-            monitor='val_loss', patience=patience, verbose=1, mode='auto')
-        checkpointer = ModelCheckpoint(
-            filepath=model_name + '.h5', verbose=0, save_best_only=True)
-        reduce_lr = ReduceLROnPlateau(factor=0.3, patience=3)
+                def on_epoch_end(self, batch, logs={}):
+                    self.losses.append((logs.get('loss'),
+                                        logs.get("val_loss")))
 
-        h2 = model.fit_generator(
-            datagen.flow(x_train, y_train, batch_size=batch_size),
-            steps_per_epoch=len(x_train) / batch_size,
-            validation_data=val_datagen.flow(
-                x_val, y_val, batch_size=batch_size),
-            validation_steps=len(x_val) / batch_size,
-            epochs=epoch,
-            callbacks=[history, early_stopping, checkpointer, reduce_lr])
-
-        with open(model_name + ".csv", 'a') as f_handle:
-            np.savetxt(f_handle, history.losses)
+            history = LossHistory()
+            early_stopping = EarlyStopping(
+                monitor='val_loss', patience=patience, verbose=1, mode='auto')
+            checkpointer = ModelCheckpoint(
+                filepath=model_name + '.h5', verbose=0, save_best_only=True)
+            reduce_lr = ReduceLROnPlateau(factor=0.5, patience=3, verbose=1)
+            if optimizer == "Adam":
+                callbacks = [history, early_stopping, checkpointer]
+            else:
+                callbacks = [history, early_stopping, checkpointer, reduce_lr]
+            h = model.fit_generator(
+                datagen.flow(x_train, y_train, batch_size=batch_size),
+                steps_per_epoch=len(x_train) / batch_size,
+                validation_data=val_datagen.flow(
+                    x_val, y_val, batch_size=batch_size),
+                validation_steps=len(x_val) / batch_size,
+                epochs=epoch,
+                callbacks=callbacks)
+            return h
+        else:
+            print('Evalute on test set')
+            val_datagen.fit(x_test)
+            score = model.evaluate_generator(
+                val_datagen.flow(x_test, y_test, batch_size=batch_size),
+                len(x_test) / batch_size)
+            print(score)
+            return score
 
     list_model = {
         "Xception": Xception,
@@ -213,7 +213,7 @@ def run(model_name, lr, optimizer, epoch, patience, batch_size, weights):
         "MobileNet": MobileNet
     }
     fine_tune(list_model[model_name], model_name, optimizer, lr, epoch,
-              patience, batch_size, weights, x_train)
+              patience, batch_size, weights, x_train, test)
 
 
 def parse_args():
