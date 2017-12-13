@@ -8,22 +8,6 @@ python train.py \
 
 python train.py \
   --model $model \
-  --lr 1e-03 \
-  --optimizer "Adam"
-
-python train.py \
-  --model $model \
-  --lr 1e-04 \
-  --optimizer "Adam"
-
-python train.py \
-  --model $model \
-  --lr 1e-04 \
-  --optimizer "SGD"
-
-python train.py \
-  --model $model \
-  --lr 1e-05 \
+  --lr 5e-04 \
   --optimizer "SGD"
 done
-
