@@ -13,4 +13,9 @@ MobileNet.h5 and MobileNet_sim.h5 is the saved model and weights.
 I use random_eraser.py from [cutout-random-erasing](https://github.com/yu4u/cutout-random-erasing.).
 Thanks yu4u.
 
-I also reference on [Image similarity using Deep CNN and Curriculum Learning](https://arxiv.org/pdf/1709.08761.pdf.).
+## References
+[1] T. DeVries and G. W. Taylor, "Improved Regularization of Convolutional Neural Networks with Cutout," in arXiv:1708.04552, 2017.
+
+[2] Z. Zhong, L. Zheng, G. Kang, S. Li, and Y. Yang, "Random Erasing Data Augmentation," in arXiv:1708.04896, 2017.
+
+[3] Srikar Appalaraju, Vineet Chaoji, "Image similarity using Deep CNN and Curriculum Learning," in arXiv:1709.08761, 2017.
