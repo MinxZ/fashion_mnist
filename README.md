@@ -1,5 +1,5 @@
 # Image similarity on Fashion MNIST
-[![license](https://img.shields.io/github/license/mashape/apistatus.svg?maxAge=2592000)](https://github.com/fchollet/keras/blob/master/LICENSE)
+[![license](https://img.shields.io/github/license/mashape/apistatus.svg?maxAge=2592000)](https://github.com/MinxZ/fashion_mnist/blob/master/LICENSE)
 ## How to use
 
 You need to changed the image size limitation in MobileNet of Keras firstly.
