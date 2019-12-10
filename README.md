@@ -14,8 +14,10 @@ I use random_eraser.py from [cutout-random-erasing](https://github.com/yu4u/cuto
 Thanks yu4u.
 
 ## References
-[1] T. DeVries and G. W. Taylor, "Improved Regularization of Convolutional Neural Networks with Cutout," in arXiv:1708.04552, 2017.
+[1] Han Xiao, Kashif Rasul, Roland Vollgraf, "Fashion-MNIST: a Novel Image Dataset for Benchmarking Machine Learning Algorithms", in arXiv:1708.07747, 2017.
 
-[2] Z. Zhong, L. Zheng, G. Kang, S. Li, and Y. Yang, "Random Erasing Data Augmentation," in arXiv:1708.04896, 2017.
+[2] T. DeVries and G. W. Taylor, "Improved Regularization of Convolutional Neural Networks with Cutout," in arXiv:1708.04552, 2017.
 
-[3] Srikar Appalaraju, Vineet Chaoji, "Image similarity using Deep CNN and Curriculum Learning," in arXiv:1709.08761, 2017.
+[3] Z. Zhong, L. Zheng, G. Kang, S. Li, and Y. Yang, "Random Erasing Data Augmentation," in arXiv:1708.04896, 2017.
+
+[4] Srikar Appalaraju, Vineet Chaoji, "Image similarity using Deep CNN and Curriculum Learning," in arXiv:1709.08761, 2017.
